@@ -1,0 +1,195 @@
+import { z } from "zod";
+
+/**
+ * Makes pasted product links clickable without requiring users to type a protocol.
+ * Unknown/unsafe protocols are kept unchanged so the schema can reject them.
+ */
+export function normalizeProductUrl(value: string): string {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) return trimmedValue;
+  if (/^\/\//.test(trimmedValue)) return `https:${trimmedValue}`;
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmedValue)) return trimmedValue;
+
+  return `https://${trimmedValue}`;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export const productItemSchema = z.object({
+  namaBarang: z.string().min(1, "Nama produk wajib diisi"),
+  linkProduk: z
+    .string()
+    .trim()
+    .min(1, "Link produk wajib diisi")
+    .transform(normalizeProductUrl)
+    .pipe(
+      z
+        .string()
+        .url("Format link produk tidak valid")
+        .refine(isHttpUrl, "Link produk harus menggunakan http atau https"),
+    ),
+  ukuranVarian: z.string().optional(),
+  warna: z.string().optional(),
+  jumlah: z.number().min(1, "Jumlah minimal 1"),
+  hargaBarang: z.number().min(0, "Harga barang tidak boleh negatif"),
+  sizeOrder: z.enum(
+    ["small", "medium", "large_10", "large_15", "large_20"] as const,
+    "Pilih ukuran order terlebih dahulu",
+  ),
+  lampiranUrl: z.string().optional(),
+  lampiranName: z.string().optional(),
+});
+
+export type ProductItem = z.infer<typeof productItemSchema>;
+
+export const orderFormSchema = z.object({
+  // Informasi Pembeli
+  namaPemesan: z.string().min(1, "Nama lengkap wajib diisi"),
+  whatsapp: z
+    .string()
+    .min(1, "Nomor WhatsApp wajib diisi")
+    .regex(/^[0-9]+$/, "Nomor WhatsApp hanya boleh berisi angka")
+    .min(9, "Nomor WhatsApp minimal 9 digit")
+    .max(15, "Nomor WhatsApp maksimal 15 digit"),
+  email: z
+    .string()
+    .min(1, "Email wajib diisi")
+    .email("Format email tidak valid"),
+  alamatLengkap: z.string().trim().min(1, "Alamat lengkap wajib diisi"),
+  kotaTujuan: z.string().min(1, "Kota tujuan wajib diisi"),
+  kodePos: z
+    .string()
+    .min(1, "Kode pos wajib diisi")
+    .regex(/^[0-9]+$/, "Kode pos hanya boleh berisi angka"),
+
+  // Products array
+  items: z.array(productItemSchema).min(1, "Minimal 1 produk harus ditambahkan"),
+
+  // General
+  catatan: z.string().optional(),
+  pembayaran: z.string().optional(),
+});
+
+export type OrderFormData = z.infer<typeof orderFormSchema>;
+
+/* ── Supabase / DB Types ──────────────────────────────── */
+
+export interface DbCustomer {
+  id: string;
+  nama_pemesan: string;
+  whatsapp: string;
+  email: string;
+  alamat_lengkap: string;
+  kota_tujuan: string;
+  kode_pos: string;
+  created_at: string;
+}
+
+export interface DbOrderItem {
+  id: string;
+  order_id: string;
+  nama_barang: string;
+  link_produk?: string;
+  ukuran_varian?: string;
+  warna?: string;
+  jumlah: number;
+  harga_barang: number;
+  size_order: string;
+  fee_jastip: number;
+  subtotal: number;
+  lampiran_url?: string;
+  lampiran_name?: string;
+}
+
+export interface DbOrder {
+  id: string;
+  customer_id?: string;
+  nama_pemesan: string;
+  whatsapp: string;
+  email: string;
+  alamat_lengkap: string;
+  kota_tujuan: string;
+  kode_pos: string;
+  total_harga_barang: number;
+  total_fee_jastip: number;
+  total_pembayaran: number;
+  ongkir: number;
+  shipping_method?: string;
+  shipping_status: string;
+  payment_method: string;
+  status: string;
+  catatan?: string;
+  created_at: string;
+  order_items?: DbOrderItem[];
+}
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  image: string;
+  description: string;
+  defaultLink?: string;
+}
+
+export interface OpenTrip {
+  id: string;
+  destination: string;
+  countryCode: string;
+  flag: string;
+  closeDate: string;
+  eta: string;
+  status: "Open" | "Closing Soon" | "Closed";
+  bannerUrl: string;
+}
+
+export interface Order {
+  id: string;
+  timestamp: string;
+  status:
+    | "Pending"
+    | "Waiting Payment"
+    | "Purchased"
+    | "Shipped"
+    | "Completed"
+    | "Cancelled";
+  namaPemesan: string;
+  whatsapp: string;
+  email: string;
+  alamatLengkap: string;
+  kotaTujuan: string;
+  kodePos: string;
+  // Flat product fields (from Google Sheet rows)
+  namaBarang: string;
+  linkProduk?: string;
+  ukuranVarian?: string;
+  warna?: string;
+  jumlah: number;
+  hargaBarang: number;
+  sizeOrder: string;
+  catatan?: string;
+  lampiranUrl?: string;
+  lampiranName?: string;
+  pembayaran: string;
+  feeJastip: number;
+  estimasiOngkir: number;
+  totalPembayaran: number;
+  pengiriman: number;
+}
+
+export interface FeeSettings {
+  small: number;
+  medium: number;
+  large_10: number;
+  large_15: number;
+  large_20: number;
+}
